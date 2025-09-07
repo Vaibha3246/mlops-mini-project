@@ -21,8 +21,14 @@ else:
     print("⚠️ DAGSHUB_PAT not found. Proceeding without authentication.")
 
 # Set up MLflow tracking URI
-mlflow.set_tracking_uri("https://dagshub.com/Vaibha3246/mlops-mini-project.mlflow")
-dagshub.init(repo_owner="Vaibha3246", repo_name="mlops-mini-project", mlflow=True)
+
+
+dagshub_url = "https://dagshub.com"
+repo_owner = "Vaibha3246"
+repo_name = "mlops-mini-project"
+
+# Set up MLflow tracking URI
+mlflow.set_tracking_uri(f'{dagshub_url}/{repo_owner}/{repo_name}.mlflow')
 
 # logging configuration
 logger = logging.getLogger("model_evaluation")

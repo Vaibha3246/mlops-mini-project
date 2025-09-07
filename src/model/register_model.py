@@ -1,87 +1,118 @@
-import os
+# register_model.py
+
 import json
-import logging
 import mlflow
-from mlflow import MlflowClient
+import logging
+import os
+import glob
+from dotenv import load_dotenv
 
-# ----------------------------
+# -----------------------------
+# Load environment variables
+# -----------------------------
+load_dotenv()
+dagshub_token = os.getenv("DAGSHUB_PAT")
+if not dagshub_token:
+    raise EnvironmentError("DAGSHUB_PAT environment variable is not set")
+
+os.environ["MLFLOW_TRACKING_USERNAME"] = "Vaibha3246"
+os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
+
+dagshub_url = "https://dagshub.com"
+repo_owner = "Vaibha3246"
+repo_name = "mlops-mini-project"
+
+# Set MLflow tracking URI
+mlflow.set_tracking_uri(f"{dagshub_url}/{repo_owner}/{repo_name}.mlflow")
+
+# -----------------------------
 # Logging setup
-# ----------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - model_registration - %(levelname)s - %(message)s",
-)
+# -----------------------------
 logger = logging.getLogger("model_registration")
+logger.setLevel(logging.DEBUG)
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-# ----------------------------
-# Load model info (from pipeline)
-# ----------------------------
-def load_model_info(path="reports/model_info.json"):
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Model info file not found at {path}")
-    with open(path, "r") as f:
-        return json.load(f)
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
-# ----------------------------
-# Register model safely
-# ----------------------------
-def register_and_alias_model(model_name, model_uri, alias="staging"):
-    """
-    Register a model in MLflow and assign alias (like staging/production).
-    """
-    client = MlflowClient()
-    status = "unknown"
+file_handler = logging.FileHandler("model_registration_errors.log")
+file_handler.setLevel(logging.ERROR)
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
+# -----------------------------
+# Load model info
+# -----------------------------
+def load_model_info(file_path: str) -> dict:
+    """Load model info from JSON."""
     try:
-        logger.info(f"🔄 Attempting to register model '{model_name}' at {model_uri}")
-        result = mlflow.register_model(model_uri=model_uri, name=model_name)
-        status = "registered"
-        logger.info(f"✅ Model '{model_name}' registered successfully.")
-
-        # Fetch latest version
-        latest_version = client.get_latest_versions(model_name, stages=[])[-1].version
-        logger.info(f"ℹ️ Latest version for {model_name} is v{latest_version}")
-
-        # Assign alias
-        client.set_registered_model_alias(model_name, alias, latest_version)
-        logger.info(f"🏷️ Alias '{alias}' assigned to version {latest_version}")
-
+        with open(file_path, "r") as f:
+            model_info = json.load(f)
+        logger.debug(f"Model info loaded from {file_path}")
+        return model_info
     except Exception as e:
-        logger.warning(f"⚠️ Model registry may not be supported: {e}")
-        status = "logged_only"
+        logger.error(f"Failed to load model info: {e}")
+        raise
 
-    # Save registration info (so DVC has a file output)
-    os.makedirs("reports", exist_ok=True)
-    out_path = "reports/registered_model.json"
-    with open(out_path, "w") as f:
-        json.dump(
-            {"model_name": model_name, "model_uri": model_uri, "status": status},
-            f,
-            indent=4,
+# -----------------------------
+# Get latest model file
+# -----------------------------
+def get_latest_model_file() -> str:
+    """Return the latest .pkl model file from src/model/ or project root."""
+    search_dirs = ["src/model", "."]  # first look in src/model, then root
+    pkl_files = []
+
+    for d in search_dirs:
+        files = glob.glob(os.path.join(d, "*.pkl"))
+        pkl_files.extend(files)
+
+    if not pkl_files:
+        raise FileNotFoundError(
+            f"No .pkl model files found in {', '.join(search_dirs)}"
         )
 
-    logger.info(f"📄 Registration info written to {out_path}")
-    return status
+    latest_model = max(pkl_files, key=os.path.getctime)
+    logger.debug(f"Latest model file detected: {latest_model}")
+    return latest_model
 
+# -----------------------------
+# Register / Log model
+# -----------------------------
+def register_model(model_name: str, model_info: dict, model_file: str):
+    """Log the latest model file to DagsHub MLflow."""
+    try:
+        # Start MLflow run using run_id from model_info
+        with mlflow.start_run(run_id=model_info["run_id"]):
+            mlflow.log_artifact(model_file, artifact_path=model_name)
+            logger.info(f"Model '{model_name}' logged successfully from '{model_file}'")
+            print(f"✅ Model '{model_name}' logged successfully from '{model_file}'")
+    except Exception as e:
+        logger.error(f"Error while logging the model: {e}")
+        raise
 
-# ----------------------------
-# Main entry
-# ----------------------------
+# -----------------------------
+# Main function
+# -----------------------------
 def main():
-    # Setup MLflow with DagsHub tracking server
-    mlflow.set_tracking_uri("https://dagshub.com/Vaibha3246/mlops-mini-project.mlflow")
-    logger.info(f"Accessing as {os.getenv('DAGSHUB_USERNAME', 'unknown_user')}")
+    try:
+        # Load model info
+        model_info_path = "reports/model_info.json"
+        model_info = load_model_info(model_info_path)
 
-    # Load model info produced by earlier pipeline stage
-    model_info = load_model_info()
-    model_name = model_info.get("model_name", "my_model")
-    model_uri = model_info.get("model_uri")
+        # Automatically detect latest model
+        latest_model_file = get_latest_model_file()
 
-    logger.info(f"ℹ️ Model '{model_name}' available at {model_uri}")
+        # Register the model
+        model_name = "my_model"
+        register_model(model_name, model_info, latest_model_file)
 
-    # Register and assign alias
-    register_and_alias_model(model_name, model_uri, alias="staging")
+    except Exception as e:
+        logger.error(f"Failed to register model: {e}")
+        print(f"Error: {e}")
 
-
+# -----------------------------
+# Entry point
+# -----------------------------
 if __name__ == "__main__":
     main()
