@@ -1,6 +1,7 @@
 name: ci pipeline
 
-on: push
+on: 
+ push
 
 job :
    project-testing:
