@@ -1,17 +1,17 @@
 name: CI Pipeline
 
-on: 
-  push:        # Runs on every push
+on:
+  push:
 
 jobs:
   project-testing:
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Python 
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
@@ -25,5 +25,7 @@ jobs:
       - name: Run pipeline
         env:
           DAGSHUB_PAT: ${{ secrets.DAGSHUB_PAT }}
+          MLFLOW_TRACKING_USERNAME: Vaibha3246
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_PAT }}
         run: |
           dvc repro
