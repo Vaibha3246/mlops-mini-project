@@ -96,3 +96,18 @@ stages:
       hash: md5
       md5: b35bc0e62a9b77ee3e14b26ef6c039b6
       size: 82
+  register_model:
+    cmd: python src/model/register_model.py
+    deps:
+    - path: models/model.pkl
+      hash: md5
+      md5: ffeb3db8839a33125e91641c756d70b2
+      size: 40717
+    - path: reports/model_info.json
+      hash: md5
+      md5: b35bc0e62a9b77ee3e14b26ef6c039b6
+      size: 82
+    - path: src/model/register_model.py
+      hash: md5
+      md5: df7cfe4a2544320f6e54705a8944fda5
+      size: 2422

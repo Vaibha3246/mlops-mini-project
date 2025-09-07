@@ -48,3 +48,10 @@ stages:
     - reports/model_info.json  # Add the model_info.json file as an output
 
   
+  register_model:
+    cmd: python src/model/register_model.py
+    deps:
+    - reports/model_info.json
+    - models/model.pkl
+    - src/model/register_model.py
+    
