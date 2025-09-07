@@ -10,27 +10,10 @@ import dagshub
 import os
 import joblib
 
-# Set up DagsHub credentials for MLflow tracking
-dagshub_token = os.getenv("DAGSHUB_PAT")
 
-if dagshub_token:
-    os.environ["MLFLOW_TRACKING_USERNAME"] = "Vaibha3246"
-    os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
-    print("✅ Using DAGSHUB_PAT for authentication.")
-else:
-    print("⚠️ DAGSHUB_PAT not found. Proceeding without authentication.")
-
-# Set up MLflow tracking URI
-
-
-dagshub_url = "https://dagshub.com"
-repo_owner = "Vaibha3246"
-repo_name = "mlops-mini-project"
-
-# Set up MLflow tracking URI
-mlflow.set_tracking_uri(f'{dagshub_url}/{repo_owner}/{repo_name}.mlflow')
-
-# logging configuration
+# -----------------------------
+# Logging setup
+# -----------------------------
 logger = logging.getLogger("model_evaluation")
 logger.setLevel("DEBUG")
 
@@ -47,6 +30,10 @@ file_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
+
+# -----------------------------
+# Utility functions
+# -----------------------------
 def load_model(file_path: str):
     try:
         with open(file_path, "rb") as file:
@@ -57,6 +44,7 @@ def load_model(file_path: str):
         logger.error("Error loading model: %s", e)
         raise
 
+
 def load_data(file_path: str) -> pd.DataFrame:
     try:
         df = pd.read_csv(file_path)
@@ -65,6 +53,7 @@ def load_data(file_path: str) -> pd.DataFrame:
     except Exception as e:
         logger.error("Error loading data: %s", e)
         raise
+
 
 def evaluate_model(clf, X_test: np.ndarray, y_test: np.ndarray) -> dict:
     try:
@@ -83,6 +72,7 @@ def evaluate_model(clf, X_test: np.ndarray, y_test: np.ndarray) -> dict:
         logger.error("Error during model evaluation: %s", e)
         raise
 
+
 def save_metrics(metrics: dict, file_path: str) -> None:
     try:
         with open(file_path, "w") as file:
@@ -91,6 +81,7 @@ def save_metrics(metrics: dict, file_path: str) -> None:
     except Exception as e:
         logger.error("Error saving metrics: %s", e)
         raise
+
 
 def save_model_info(run_id: str, model_path: str, file_path: str) -> None:
     try:
@@ -102,8 +93,35 @@ def save_model_info(run_id: str, model_path: str, file_path: str) -> None:
         logger.error("Error saving model info: %s", e)
         raise
 
+
+# -----------------------------
+# Main execution
+# -----------------------------
 def main():
+    dagshub_token = os.getenv("DAGSHUB_PAT")
+
+    if dagshub_token:
+        os.environ["MLFLOW_TRACKING_USERNAME"] = "Vaibha3246"
+        os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
+        print("✅ DAGSHUB_PAT found, using authentication.")
+    else:
+        raise EnvironmentError("❌ DAGSHUB_PAT not found. Add it in GitHub Actions secrets.")
+
+    dagshub_url = "https://dagshub.com"
+    repo_owner = "Vaibha3246"
+    repo_name = "mlops-mini-project"
+
+    # Set MLflow tracking URI
+    mlflow.set_tracking_uri(f"{dagshub_url}/{repo_owner}/{repo_name}.mlflow")
+
+    # Debug info for CI logs
+    print(f"🔑 MLflow tracking at: {mlflow.get_tracking_uri()}")
+    print(f"👤 Username: {os.getenv('MLFLOW_TRACKING_USERNAME')}")
+    print(f"🔒 Token length: {len(os.getenv('MLFLOW_TRACKING_PASSWORD') or '')}")
+
+    # ✅ Set experiment AFTER creds
     mlflow.set_experiment("dvc-pipeline")
+
     with mlflow.start_run() as run:
         try:
             clf = load_model("./models/model.pkl")
@@ -113,7 +131,6 @@ def main():
             y_test = test_data.iloc[:, -1].values
 
             metrics = evaluate_model(clf, X_test, y_test)
-
             save_metrics(metrics, "reports/metrics.json")
 
             # Log metrics
@@ -125,27 +142,28 @@ def main():
                 for param_name, param_value in clf.get_params().items():
                     mlflow.log_param(param_name, param_value)
 
-            # Save and log model
+            # Save + log model
             joblib.dump(clf, "model.pkl")
             mlflow.log_artifact("model.pkl", artifact_path="model")
 
-            # Save and log model info (FIXED: consistent filename)
+            # Save + log model info
             save_model_info(run.info.run_id, "model", "reports/model_info.json")
             mlflow.log_artifact("reports/model_info.json")
 
-            # Log metrics file
+            # Log reports + logs
             mlflow.log_artifact("reports/metrics.json")
-
-            # Log error log file
             mlflow.log_artifact("model_evaluation_errors.log")
-            
-            # ✅ Log the code file itself
+
+            # Log code itself
             current_file = os.path.abspath(__file__)
             mlflow.log_artifact(current_file, artifact_path="code")
+
+            print("✅ Model evaluation and logging completed successfully.")
 
         except Exception as e:
             logger.error("Failed to complete the model evaluation process: %s", e)
             print(f"Error: {e}")
+
 
 if __name__ == "__main__":
     main()
