@@ -6,6 +6,7 @@ import logging
 import os
 import glob
 import dotenv
+import joblib
 from dotenv import load_dotenv
 
 # -----------------------------
@@ -61,7 +62,7 @@ def load_model_info(file_path: str) -> dict:
 # -----------------------------
 def get_latest_model_file() -> str:
     """Return the latest .pkl model file from src/model/ or project root."""
-    search_dirs = ["src/model", "."]  # first look in src/model, then root
+    search_dirs = ["src/model", "."]
     pkl_files = []
 
     for d in search_dirs:
@@ -81,15 +82,22 @@ def get_latest_model_file() -> str:
 # Register / Log model
 # -----------------------------
 def register_model(model_name: str, model_info: dict, model_file: str):
-    """Log the latest model file to DagsHub MLflow."""
+    """Register the latest model file to DagsHub MLflow registry."""
     try:
-        # Start MLflow run using run_id from model_info
+        # Load model back from pickle
+        model = joblib.load(model_file)
+
+        # Use existing run_id so it links to your pipeline run
         with mlflow.start_run(run_id=model_info["run_id"]):
-            mlflow.log_artifact(model_file, artifact_path=model_name)
-            logger.info(f"Model '{model_name}' logged successfully from '{model_file}'")
-            print(f"✅ Model '{model_name}' logged successfully from '{model_file}'")
+            mlflow.sklearn.log_model(
+                sk_model=model,
+                artifact_path="model",
+                registered_model_name=model_name
+            )
+            logger.info(f"✅ Model '{model_name}' registered successfully as new version")
+            print(f"✅ Model '{model_name}' registered successfully as new version")
     except Exception as e:
-        logger.error(f"Error while logging the model: {e}")
+        logger.error(f"Error while registering the model: {e}")
         raise
 
 # -----------------------------
@@ -97,14 +105,11 @@ def register_model(model_name: str, model_info: dict, model_file: str):
 # -----------------------------
 def main():
     try:
-        # Load model info
         model_info_path = "reports/model_info.json"
         model_info = load_model_info(model_info_path)
 
-        # Automatically detect latest model
         latest_model_file = get_latest_model_file()
 
-        # Register the model
         model_name = "my_model"
         register_model(model_name, model_info, latest_model_file)
 
