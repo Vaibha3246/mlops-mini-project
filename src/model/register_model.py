@@ -1,13 +1,12 @@
-# register_model.py
-
 import json
 import mlflow
+import mlflow.sklearn
 import logging
 import os
 import glob
-import dotenv
 import joblib
 from dotenv import load_dotenv
+from mlflow.tracking import MlflowClient
 
 # -----------------------------
 # Load environment variables
@@ -32,7 +31,7 @@ mlflow.set_tracking_uri(f"{dagshub_url}/{repo_owner}/{repo_name}.mlflow")
 # -----------------------------
 logger = logging.getLogger("model_registration")
 logger.setLevel(logging.DEBUG)
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
@@ -47,7 +46,6 @@ logger.addHandler(file_handler)
 # Load model info
 # -----------------------------
 def load_model_info(file_path: str) -> dict:
-    """Load model info from JSON."""
     try:
         with open(file_path, "r") as f:
             model_info = json.load(f)
@@ -61,7 +59,6 @@ def load_model_info(file_path: str) -> dict:
 # Get latest model file
 # -----------------------------
 def get_latest_model_file() -> str:
-    """Return the latest .pkl model file from src/model/ or project root."""
     search_dirs = ["src/model", "."]
     pkl_files = []
 
@@ -70,55 +67,60 @@ def get_latest_model_file() -> str:
         pkl_files.extend(files)
 
     if not pkl_files:
-        raise FileNotFoundError(
-            f"No .pkl model files found in {', '.join(search_dirs)}"
-        )
+        raise FileNotFoundError("No .pkl model files found!")
 
     latest_model = max(pkl_files, key=os.path.getctime)
     logger.debug(f"Latest model file detected: {latest_model}")
     return latest_model
 
 # -----------------------------
-# Register / Log model
+# Register model
 # -----------------------------
-def register_model(model_name: str, model_info: dict, model_file: str):
-    """Register the latest model file to DagsHub MLflow registry."""
+def register_model(model_name: str, model_file: str):
     try:
-        # Load model back from pickle
         model = joblib.load(model_file)
 
-        # Use existing run_id so it links to your pipeline run
-        with mlflow.start_run(run_id=model_info["run_id"]):
+        with mlflow.start_run():  # 🔥 NEW: Let MLflow create run_id
             mlflow.sklearn.log_model(
                 sk_model=model,
                 artifact_path="model",
                 registered_model_name=model_name
             )
-            logger.info(f"✅ Model '{model_name}' registered successfully as new version")
-            print(f"✅ Model '{model_name}' registered successfully as new version")
+            logger.info(f"✅ Model '{model_name}' registered successfully")
+
+        # Transition to Staging
+        client = MlflowClient()
+        latest_versions = client.get_latest_versions(model_name, stages=["None"])
+        if latest_versions:
+            version = latest_versions[0].version
+            client.transition_model_version_stage(
+                name=model_name,
+                version=version,
+                stage="Staging"
+            )
+            logger.info(f"🚀 Model {model_name} v{version} moved to Staging")
+
     except Exception as e:
         logger.error(f"Error while registering the model: {e}")
         raise
 
 # -----------------------------
-# Main function
+# Main
 # -----------------------------
 def main():
     try:
+        # Optional: load run info (but not using run_id anymore)
         model_info_path = "reports/model_info.json"
-        model_info = load_model_info(model_info_path)
+        if os.path.exists(model_info_path):
+            _ = load_model_info(model_info_path)
 
         latest_model_file = get_latest_model_file()
-
         model_name = "my_model"
-        register_model(model_name, model_info, latest_model_file)
+        register_model(model_name, latest_model_file)
 
     except Exception as e:
         logger.error(f"Failed to register model: {e}")
-        print(f"Error: {e}")
+        raise
 
-# -----------------------------
-# Entry point
-# -----------------------------
 if __name__ == "__main__":
     main()
