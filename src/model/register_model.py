@@ -5,6 +5,7 @@ import mlflow
 import logging
 import os
 import glob
+import dotenv
 from dotenv import load_dotenv
 
 # -----------------------------
